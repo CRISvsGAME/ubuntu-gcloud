@@ -1,105 +1,62 @@
-# Ubuntu Gcloud
+# Ubuntu Google Cloud CLI Installer
 
-## Install
+Installs Google Cloud CLI on supported Ubuntu systems using Google Cloud's official APT repository.
 
-### Bash
+## Requirements
 
-```sh
-#!/usr/bin/env bash
+- Ubuntu 24.04 or later
+- Root privileges
+- Bash
+- `apt-get`
+- `curl`
+- `dpkg`
+- `gpg`
+- `install`
+- `mktemp`
 
-set -euo pipefail
+## Installation
 
-NORMAL="\e[0m"
-ERROR="\e[31m"
-SUCCESS="\e[32m"
-WARNING="\e[33m"
-PRIMARY="\e[34m"
-
-exit_error() {
-    echo -e "${ERROR}ERROR:${NORMAL} $1" >&2
-    exit 1
-}
-
-exit_success() {
-    echo -e "${SUCCESS}SUCCESS:${NORMAL} $1"
-    exit 0
-}
-
-exit_warning() {
-    echo -e "${WARNING}WARNING:${NORMAL} $1" >&2
-    exit 1
-}
-
-if [[ $EUID -ne 0 ]]; then
-    exit_warning "This script must be run as root."
-fi
-
-check_cmd() {
-    local cmd="$1"
-    if ! command -v "$cmd" >/dev/null 2>&1; then
-        exit_warning "Command '$cmd' not found. Please install it and retry."
-    fi
-}
-
-check_cmd "curl"
-check_cmd "gpg"
-check_cmd "apt-get"
-
-run_cmd() {
-    local action="$1"
-    shift
-
-    local error="$1"
-    shift
-
-    echo -en "${PRIMARY}ACTION:${NORMAL} $action"
-
-    set +e
-    local output
-    output=$("$@" 2>&1)
-    local status=$?
-    set -e
-
-    if [ "$status" -eq 0 ]; then
-        echo -e "${SUCCESS}DONE${NORMAL}"
-    else
-        echo
-        echo "$output"
-        exit_error "$error"
-    fi
-}
-
-PKG_NAME="google-cloud-cli"
-REP_NAME="google-cloud"
-GPG_LINK="https://packages.cloud.google.com/apt/doc/apt-key.gpg"
-GPG_PATH="/usr/share/keyrings/$REP_NAME.gpg"
-REP_LINK="https://packages.cloud.google.com/apt"
-REP_PATH="/etc/apt/sources.list.d/$REP_NAME.list"
-REP_INFO="deb [signed-by=$GPG_PATH] $REP_LINK cloud-sdk main"
-
-run_cmd "Downloading $REP_NAME key... " \
-    "Failed to download $REP_NAME key." \
-    curl -fsLS "$GPG_LINK" -o "/tmp/$REP_NAME"
-
-run_cmd "Installing $REP_NAME key... " \
-    "Failed to install $REP_NAME key." \
-    gpg --dearmor --yes -o "$GPG_PATH" "/tmp/$REP_NAME"
-
-run_cmd "Removing $REP_NAME key... " \
-    "Failed to remove $REP_NAME key." \
-    rm -f "/tmp/$REP_NAME"
-
-run_cmd "Adding $REP_NAME repository... " \
-    "Failed to add $REP_NAME repository." \
-    bash -c "echo $REP_INFO | tee $REP_PATH >/dev/null"
-
-run_cmd "Updating package list... " \
-    "Failed to update package list." \
-    apt-get update -qq
-
-run_cmd "Installing $PKG_NAME... " \
-    "Failed to install $PKG_NAME." \
-    apt-get install -qq "$PKG_NAME"
-
-exit_success "$PKG_NAME has been installed successfully."
+```bash
+curl -fsLS https://raw.githubusercontent.com/crisvsgame/ubuntu-gcloud/main/install.sh | sudo /bin/bash
 ```
+
+Or, after downloading the script:
+
+```bash
+sudo ./install.sh
+```
+
+```bash
+sudo /bin/bash install.sh
+```
+
+## Behaviour
+
+The installer:
+
+- validates the Ubuntu version;
+- downloads and validates the repository signing key against trusted fingerprints;
+- installs the key under `/etc/apt/keyrings/`;
+- configures the repository using Deb822 `.sources` format;
+- updates the APT package index;
+- installs Google Cloud CLI non-interactively.
+
+The installer uses a temporary working directory that is removed when the script exits.
+
+## Environment
+
+Colour output is automatically enabled for terminal output.
+
+Supported overrides:
+
+```bash
+NO_COLOR=1
+FORCE_COLOR=1
+FORCE_COLOR=0
+```
+
+## Scope
+
+This installer manages only artifacts created by the current installer version.
+
+Legacy repository files or signing keys from previous installer versions are not migrated or removed automatically.
