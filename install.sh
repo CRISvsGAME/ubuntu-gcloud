@@ -148,15 +148,14 @@ check_cmd "mktemp"
 ################################################################################
 
 download_key() {
-	local out_file="$1"
-	local key_file="$2"
-	local key_link="$3"
+	local out="$1"
+	local key="$2"
 
-	action "Downloading key from $key_link"
+	action "Downloading key from $KEY_LINK"
 
-	if ! curl -sfLSo "$key_file" "$key_link" 2>"$out_file"; then
+	if ! curl -sfLSo "$key" "$KEY_LINK" 2>"$out"; then
 		failed
-		error "Failed to download key from $key_link" "$out_file"
+		error "Failed to download key from $KEY_LINK" "$out"
 		exit 1
 	fi
 
@@ -164,18 +163,16 @@ download_key() {
 }
 
 validate_key() {
-	local out_file="$1"
-	local key_file="$2"
-	local inf_file="$3"
-	local rep_name="$4"
-	local -n key_fing="$5"
+	local out="$1"
+	local key="$2"
+	local inf="$3"
 
-	action "Validating key for $rep_name"
+	action "Validating key for $REP_NAME"
 
 	if ! gpg --batch --no-keyring --no-options --no-tty --trust-model always --show-keys --with-colons \
-		"$key_file" </dev/null 2>"$out_file" >"$inf_file"; then
+		"$key" </dev/null 2>"$out" >"$inf"; then
 		failed
-		error "Failed to validate key for $rep_name" "$out_file"
+		error "Failed to validate key for $REP_NAME" "$out"
 		exit 1
 	fi
 
@@ -203,15 +200,15 @@ validate_key() {
 			fingerprints+=("$fingerprint")
 			primary=false
 		fi
-	done 2>"$out_file" <"$inf_file"; then
+	done 2>"$out" <"$inf"; then
 		failed
-		error "Failed to read key information for $rep_name" "$out_file"
+		error "Failed to read key information for $REP_NAME" "$out"
 		exit 1
 	fi
 
 	if [[ "${#fingerprints[@]}" -eq 0 ]]; then
 		failed
-		error "No primary key fingerprints found for $rep_name" "$out_file"
+		error "No primary key fingerprints found for $REP_NAME" "$out"
 		exit 1
 	fi
 
@@ -221,7 +218,7 @@ validate_key() {
 	for found in "${fingerprints[@]}"; do
 		local valid=false
 
-		for allowed in "${key_fing[@]}"; do
+		for allowed in "${KEY_FING[@]}"; do
 			if [[ "$found" == "$allowed" ]]; then
 				valid=true
 				break
@@ -230,7 +227,7 @@ validate_key() {
 
 		if [[ "$valid" == false ]]; then
 			failed
-			error "Untrusted primary key fingerprint found for $rep_name: $found" "$out_file"
+			error "Untrusted primary key fingerprint found for $REP_NAME: $found" "$out"
 			exit 1
 		fi
 	done
@@ -239,30 +236,27 @@ validate_key() {
 }
 
 install_key() {
-	local out_file="$1"
-	local key_file="$2"
-	local rep_name="$3"
-	local key_path="$4"
-	local -n key_ref="$5"
+	local out="$1"
+	local key="$2"
 	local header
 
-	action "Installing key for $rep_name"
+	action "Installing key for $REP_NAME"
 
-	if ! IFS= read -rN 36 header 2>"$out_file" <"$key_file"; then
+	if ! IFS= read -rN 36 header 2>"$out" <"$key"; then
 		failed
-		error "Failed to inspect key format for $rep_name" "$out_file"
+		error "Failed to inspect key format for $REP_NAME" "$out"
 		exit 1
 	fi
 
 	if [[ "$header" == "-----BEGIN PGP PUBLIC KEY BLOCK-----" ]]; then
-		key_ref="$key_path$rep_name.asc"
+		KEY_NAME="$REP_NAME.asc"
 	else
-		key_ref="$key_path$rep_name.gpg"
+		KEY_NAME="$REP_NAME.gpg"
 	fi
 
-	if ! install -Dm 0644 "$key_file" "$key_ref" 2>"$out_file"; then
+	if ! install -Dm 0644 "$key" "$KEY_PATH$KEY_NAME" 2>"$out"; then
 		failed
-		error "Failed to install key for $rep_name" "$out_file"
+		error "Failed to install key for $REP_NAME" "$out"
 		exit 1
 	fi
 
@@ -270,35 +264,31 @@ install_key() {
 }
 
 install_repo() {
-	local out_file="$1"
-	local tmp_file="$2"
-	local rep_name="$3"
-	local rep_link="$4"
-	local rep_path="$5"
-	local -n key_ref="$6"
+	local out="$1"
+	local tmp="$2"
 	local info
 
-	local -a rep_lines=(
+	local -a rep_info=(
 		"Types: deb"
-		"URIs: $rep_link"
+		"URIs: $REP_LINK"
 		"Suites: cloud-sdk"
 		"Components: main"
-		"Signed-By: $key_ref"
+		"Signed-By: $KEY_PATH$KEY_NAME"
 	)
 
-	printf -v info "%s\n" "${rep_lines[@]}"
+	printf -v info "%s\n" "${rep_info[@]}"
 
-	action "Installing repository for $rep_name"
+	action "Installing repository for $REP_NAME"
 
-	if ! printf "%s" "$info" 2>"$out_file" >"$tmp_file"; then
+	if ! printf "%s" "$info" 2>"$out" >"$tmp"; then
 		failed
-		error "Failed to prepare repository for $rep_name" "$out_file"
+		error "Failed to prepare repository for $REP_NAME" "$out"
 		exit 1
 	fi
 
-	if ! install -Dm 0644 "$tmp_file" "$rep_path" 2>"$out_file"; then
+	if ! install -Dm 0644 "$tmp" "$REP_PATH" 2>"$out"; then
 		failed
-		error "Failed to install repository for $rep_name" "$out_file"
+		error "Failed to install repository for $REP_NAME" "$out"
 		exit 1
 	fi
 
@@ -306,13 +296,13 @@ install_repo() {
 }
 
 update_pkg() {
-	local out_file="$1"
+	local out="$1"
 
 	action "Updating package list"
 
-	if ! apt-get update -qq -eany </dev/null 2>"$out_file" 1>&2; then
+	if ! apt-get update -qq -eany </dev/null 2>"$out" 1>&2; then
 		failed
-		error "Failed to update package list" "$out_file"
+		error "Failed to update package list" "$out"
 		exit 1
 	fi
 
@@ -320,21 +310,20 @@ update_pkg() {
 }
 
 install_pkg() {
-	local out_file="$1"
-	local -n pkg_name="$2"
+	local out="$1"
 	local s
 
 	s=""
 
-	if [[ "${#pkg_name[@]}" -gt 1 ]]; then
+	if [[ "${#PKG_NAME[@]}" -gt 1 ]]; then
 		s="s"
 	fi
 
-	action "Installing package${s} '${pkg_name[*]}'"
+	action "Installing package${s} '${PKG_NAME[*]}'"
 
-	if ! apt-get install -qq "${pkg_name[@]}" </dev/null 2>"$out_file" 1>&2; then
+	if ! apt-get install -qq "${PKG_NAME[@]}" </dev/null 2>"$out" 1>&2; then
 		failed
-		error "Failed to install package${s} '${pkg_name[*]}'" "$out_file"
+		error "Failed to install package${s} '${PKG_NAME[*]}'" "$out"
 		exit 1
 	fi
 
@@ -345,13 +334,12 @@ install_pkg() {
 # Repository Information:
 ################################################################################
 
-# shellcheck disable=SC2034
 declare -ar KEY_FING=("35BAA0B33E9EB396F59CA838C0BA5CE6DC6315A3")
-# shellcheck disable=SC2034
 declare -ar PKG_NAME=("google-cloud-cli")
 REP_NAME="google-cloud"
 KEY_LINK="https://packages.cloud.google.com/apt/doc/apt-key.gpg"
 KEY_PATH="/etc/apt/keyrings/"
+KEY_NAME=""
 REP_LINK="https://packages.cloud.google.com/apt"
 REP_PATH="/etc/apt/sources.list.d/$REP_NAME.sources"
 
@@ -363,28 +351,25 @@ readonly REP_NAME KEY_LINK KEY_PATH REP_LINK REP_PATH
 
 main() {
 	local dir
+	local out
 	local key
 	local inf
-	local out
 	local tmp
-	local key_name
 
 	dir=$(mktemp -d)
+	out="$dir/out"
 	key="$dir/key"
 	inf="$dir/inf"
-	out="$dir/out"
 	tmp="$dir/tmp"
-	# shellcheck disable=SC2034
-	key_name=""
 
 	trap 'rm -fr -- "$dir"' EXIT
 
-	download_key "$out" "$key" "$KEY_LINK"
-	validate_key "$out" "$key" "$inf" "$REP_NAME" KEY_FING
-	install_key "$out" "$key" "$REP_NAME" "$KEY_PATH" key_name
-	install_repo "$out" "$tmp" "$REP_NAME" "$REP_LINK" "$REP_PATH" key_name
+	download_key "$out" "$key"
+	validate_key "$out" "$key" "$inf"
+	install_key "$out" "$key"
+	install_repo "$out" "$tmp"
 	update_pkg "$out"
-	install_pkg "$out" PKG_NAME
+	install_pkg "$out"
 
 	rm -fr -- "$dir"
 	trap - EXIT
