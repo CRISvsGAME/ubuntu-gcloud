@@ -76,6 +76,11 @@ failed() {
 	printf "%sFAILED%s\n" "$EO" "$NO"
 }
 
+# shellcheck disable=SC2329
+warning() {
+	printf "%sWARNING:%s %s\n" "$WE" "$NE" "$1" >&2
+}
+
 error() {
 	printf "%sERROR:%s %s\n" "$EE" "$NE" "$1" >&2
 	cat "$2" >&2
@@ -155,7 +160,7 @@ download_key() {
 
 	if ! curl -sfLSo "$key" "$KEY_LINK" 2>"$out"; then
 		failed
-		error "Failed to download key from $KEY_LINK" "$out"
+		error "Failed to download key from $KEY_LINK." "$out"
 		exit 1
 	fi
 
@@ -172,7 +177,7 @@ validate_key() {
 	if ! gpg --batch --no-keyring --no-options --no-tty --trust-model always --show-keys --with-colons \
 		"$key" </dev/null 2>"$out" >"$inf"; then
 		failed
-		error "Failed to validate key for $REP_NAME" "$out"
+		error "Failed to validate key for $REP_NAME." "$out"
 		exit 1
 	fi
 
@@ -202,13 +207,13 @@ validate_key() {
 		fi
 	done 2>"$out" <"$inf"; then
 		failed
-		error "Failed to read key information for $REP_NAME" "$out"
+		error "Failed to read key information for $REP_NAME." "$out"
 		exit 1
 	fi
 
 	if [[ "${#fingerprints[@]}" -eq 0 ]]; then
 		failed
-		error "No primary key fingerprints found for $REP_NAME" "$out"
+		error "No primary key fingerprints found for $REP_NAME." "$out"
 		exit 1
 	fi
 
@@ -227,7 +232,7 @@ validate_key() {
 
 		if [[ "$valid" == false ]]; then
 			failed
-			error "Untrusted primary key fingerprint found for $REP_NAME: $found" "$out"
+			error "Untrusted primary key fingerprint found for $REP_NAME: $found." "$out"
 			exit 1
 		fi
 	done
@@ -244,7 +249,7 @@ install_key() {
 
 	if ! IFS= read -rN 36 header 2>"$out" <"$key"; then
 		failed
-		error "Failed to inspect key format for $REP_NAME" "$out"
+		error "Failed to inspect key format for $REP_NAME." "$out"
 		exit 1
 	fi
 
@@ -256,7 +261,7 @@ install_key() {
 
 	if ! install -Dm 0644 "$key" "$KEY_PATH$KEY_NAME" 2>"$out"; then
 		failed
-		error "Failed to install key for $REP_NAME" "$out"
+		error "Failed to install key for $REP_NAME." "$out"
 		exit 1
 	fi
 
@@ -266,29 +271,54 @@ install_key() {
 install_repo() {
 	local out="$1"
 	local tmp="$2"
-	local info
-
-	local -a rep_info=(
-		"Types: deb"
-		"URIs: $REP_LINK"
-		"Suites: cloud-sdk"
-		"Components: main"
-		"Signed-By: $KEY_PATH$KEY_NAME"
-	)
-
-	printf -v info "%s\n" "${rep_info[@]}"
+	local info=""
+	local field
+	local value
+	local place
+	local i
 
 	action "Installing repository for $REP_NAME"
 
+	if ((${#REP_INFO[@]} % 2 != 0)); then
+		failed
+		error "REP_INFO must contain field/value pairs." "$out"
+		exit 1
+	fi
+
+	for ((i = 0; i < ${#REP_INFO[@]}; i += 2)); do
+		field="${REP_INFO[i]}"
+		value="${REP_INFO[i + 1]}"
+
+		while [[ "$value" =~ \{\{([A-Z_]+)\}\} ]]; do
+			place="${BASH_REMATCH[1]}"
+
+			if [[ ! -v "$place" ]]; then
+				failed
+				error "Placeholder '$place' is undefined." "$out"
+				exit 1
+			fi
+
+			if [[ -z "${!place}" ]]; then
+				failed
+				error "Placeholder '$place' is empty." "$out"
+				exit 1
+			fi
+
+			value="${value//\{\{$place\}\}/${!place}}"
+		done
+
+		printf -v info "%s%s: %s\n" "$info" "$field" "$value"
+	done
+
 	if ! printf "%s" "$info" 2>"$out" >"$tmp"; then
 		failed
-		error "Failed to prepare repository for $REP_NAME" "$out"
+		error "Failed to prepare repository for $REP_NAME." "$out"
 		exit 1
 	fi
 
 	if ! install -Dm 0644 "$tmp" "$REP_PATH" 2>"$out"; then
 		failed
-		error "Failed to install repository for $REP_NAME" "$out"
+		error "Failed to install repository for $REP_NAME." "$out"
 		exit 1
 	fi
 
@@ -302,7 +332,7 @@ update_pkg() {
 
 	if ! apt-get update -qq -eany </dev/null 2>"$out" 1>&2; then
 		failed
-		error "Failed to update package list" "$out"
+		error "Failed to update package list." "$out"
 		exit 1
 	fi
 
@@ -323,7 +353,7 @@ install_pkg() {
 
 	if ! apt-get install -qq "${PKG_NAME[@]}" </dev/null 2>"$out" 1>&2; then
 		failed
-		error "Failed to install package${s} '${PKG_NAME[*]}'" "$out"
+		error "Failed to install package${s} '${PKG_NAME[*]}'." "$out"
 		exit 1
 	fi
 
@@ -334,6 +364,7 @@ install_pkg() {
 # Repository Information:
 ################################################################################
 
+ARCH=$(dpkg --print-architecture)
 declare -ar KEY_FING=("35BAA0B33E9EB396F59CA838C0BA5CE6DC6315A3")
 declare -ar PKG_NAME=("google-cloud-cli")
 REP_NAME="google-cloud"
@@ -342,8 +373,16 @@ KEY_PATH="/etc/apt/keyrings/"
 KEY_NAME=""
 REP_LINK="https://packages.cloud.google.com/apt"
 REP_PATH="/etc/apt/sources.list.d/$REP_NAME.sources"
+declare -ar REP_INFO=(
+	"Types" "deb"
+	"URIs" "$REP_LINK"
+	"Suites" "cloud-sdk"
+	"Components" "main"
+	"Signed-By" "${KEY_PATH}{{KEY_NAME}}"
+	"Architectures" "$ARCH"
+)
 
-readonly REP_NAME KEY_LINK KEY_PATH REP_LINK REP_PATH
+readonly ARCH REP_NAME KEY_LINK KEY_PATH REP_LINK REP_PATH
 
 ################################################################################
 # Main:
